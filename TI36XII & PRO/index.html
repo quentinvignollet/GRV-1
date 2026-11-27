@@ -31,6 +31,7 @@ body{margin:0;position:fixed;inset:0;background:var(--bg);font:16px/1.5 "Roboto 
 .key{height:31px;border:0;border-radius:9px;font:700 12px "Roboto Condensed",sans-serif;color:#f3f5f7;background:linear-gradient(#55595f,#35383d);box-shadow:0 3px 0 #0f1012,inset 0 1px 0 rgba(255,255,255,.2);cursor:pointer;padding:0;transition:transform .04s;-webkit-tap-highlight-color:transparent}
 .key.num{background:linear-gradient(#fdfdfe,#d8dbdf);color:#15171a;font-size:19px;height:35px;border-radius:10px}
 .key.op{background:linear-gradient(#e2e4e7,#b9bdc2);color:#1a1c1f;font-size:22px;height:37px;border-radius:16px}
+.key.dms{font:700 21px/1 "Roboto Condensed",sans-serif;letter-spacing:.16em;padding-left:.16em;padding-top:9px}
 .key.blue{background:linear-gradient(#c4c2f2,#9c98e0);color:#1b1a3a}
 .key.tall{height:100%;min-height:74px;display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1}
 .key.tall small{font-size:10px;font-weight:700}
@@ -344,7 +345,7 @@ const KEYS_II=[
  ['del','DEL','INS',1,3,'',delKey,()=>{if(!S.done)S.ins=true}],
  ['logic','LOGIC','COMPx',2,1,''],
  ['conv','Conver','CONST',2,2,''],
- ['ang','° ′ ″','R◂▸P',2,3,'',()=>openMenu('angle')],
+ ['ang','°&thinsp;′&thinsp;″','R◂▸P',2,3,'dms',()=>openMenu('angle')],
  ['int','∫dx','F◂▸D',3,1,''],
  ['abc','A b/c','A b/c◂▸d/e',3,2,''],
  ['op1','OP1','▸OP1',3,3,''],
@@ -619,7 +620,7 @@ function tri(x,y,dir,on){
 
 // ---------- écran TI-36X II : 11 car. 5×7 + 10 chiffres 7 segments ----------
 function topCells(){
-  const cells=[];let focus=-1;
+  const cells=[];let focus=-1,fstart=-1;
   const push=(gs,o={})=>gs.forEach(g=>cells.push({g,...o}));
   if(S.err){push(glyphs(S.err));return{cells,focus}}
   if(S.menu){
@@ -627,10 +628,11 @@ function topCells(){
     if(m.label)push(glyphs(m.label));
     m.items.forEach((it,i)=>{
       if(i&&!m.tight)push([' ']);
+      if(i===m.sel)fstart=cells.length;
       push(glyphs(it[0]),{ul:i===m.sel});
       if(i===m.sel)focus=cells.length-1;
     });
-    return{cells,focus};
+    return{cells,focus,fstart};
   }
   if(S.msg){push(glyphs(S.msg));return{cells,focus}}
   const live=!S.done;
@@ -645,14 +647,24 @@ function topCells(){
   return{cells,focus};
 }
 function drawII(){
-  const{cells,focus}=topCells();
+  const{cells,focus,fstart}=topCells();
   hasCursor=cells.some(c=>c.cur);
+  let hideFrom=1e9;
   if(focus<0)off=0;
-  else{if(focus>=off+11)off=focus-10;if(focus<off)off=focus;off=Math.max(0,Math.min(off,Math.max(0,cells.length-11)))}
+  else if(fstart>=0){
+    // menu : défilement mot par mot, jamais de mot coupé
+    const starts=[0];cells.forEach((c,i)=>{if(i&&c.g!==' '&&cells[i-1].g===' ')starts.push(i)});
+    if(fstart<off)off=fstart;
+    if(focus>=off+11)off=starts.find(x=>focus<x+11);
+    if(!starts.includes(off))off=fstart;
+    let e=off+11;
+    if(e<cells.length&&cells[e].g!==' '){while(e>off&&cells[e-1].g!==' ')e--}
+    hideFrom=e;
+  }else{if(focus>=off+11)off=focus-10;if(focus<off)off=focus;off=Math.max(0,Math.min(off,Math.max(0,cells.length-11)))}
   if(!S.menu&&(S.done||S.err||S.msg))off=0;
   const p=4.05,ds=3.4,x0=8,y0=6;
   for(let c=0;c<11;c++){
-    const cell=cells[off+c],gl=cell?F57[cell.g]||F57['?']:null;
+    const cell=off+c<hideFrom?cells[off+c]:null,gl=cell?F57[cell.g]||F57['?']:null;
     const block=cell&&cell.cur&&!S.ins&&phase;
     const under=cell&&(cell.ul||(cell.cur&&S.ins&&phase));
     for(let r=0;r<8;r++)for(let k=0;k<5;k++){
@@ -724,8 +736,7 @@ function proScreen(){
     if(ex.length>16)ex=ex.slice(0,15).concat(['▸']);
     const rs=proRes(h);
     if(inv)selLine=L.length;
-    if(ex.length+1+rs.length<=16){const row=cellsOf(ex,{inv});while(row.length+rs.length<16)row.push({g:' '});L.push(row.concat(cellsOf(rs)))}
-    else{L.push(cellsOf(ex,{inv}));L.push(padLeft(cellsOf(rs)))}
+    L.push(cellsOf(ex,{inv}));L.push(padLeft(cellsOf(rs)));
   }
   const entry=[];let ci=-1;
   S.tokens.forEach((id,i)=>proTok(id).forEach((g,j)=>{const cur=i===S.cur&&j===0&&S.hsel<0;if(cur)ci=entry.length;entry.push({g,cur})}));
